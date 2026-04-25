@@ -19,12 +19,14 @@ def send_notification(
     jerseys: List[Jersey],
     config: dict,
 ) -> None:
-    gmail_user = config["from_email"]
+    gmail_user = os.environ.get("NOTIFY_EMAIL") or config.get("from_email", "")
     gmail_password = os.environ.get("GMAIL_APP_PASSWORD", "")
+    to_email = os.environ.get("NOTIFY_EMAIL") or config.get("notify_email", "")
+
+    if not gmail_user:
+        raise EnvironmentError("NOTIFY_EMAIL environment variable is not set.")
     if not gmail_password:
         raise EnvironmentError("GMAIL_APP_PASSWORD environment variable is not set.")
-
-    to_email = config["notify_email"]
     subject = f"[Jersey Bot] {team} {jersey_type} jerseys on clearance at Fanatics"
 
     body = _build_body(team, jersey_type, jerseys)

@@ -80,5 +80,7 @@ exclude_keywords:
   - "Preschool"
 
 # ── Email ────────────────────────────────────────────────────────────────────
-notify_email: "nkodner@gmail.com"
-from_email: "nkodner@gmail.com"
+# Email address is read from the NOTIFY_EMAIL GitHub secret at runtime.
+# The fields below are fallbacks for local runs without the env var set.
+notify_email: ""
+from_email: ""
