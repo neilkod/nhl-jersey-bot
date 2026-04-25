@@ -4,7 +4,16 @@ on:
   schedule:
     # Runs every 6 hours at :00. Adjust the hour offsets to shift the window.
     - cron: '0 */6 * * *'
-  workflow_dispatch:   # allows a manual "Run workflow" button in the GitHub UI
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Save debug files (screenshot + HTML + API responses) as artifacts'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   check-jerseys:
@@ -31,11 +40,28 @@ jobs:
       - name: Run jersey bot
         env:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        run: python main.py
+        run: |
+          if [ "${{ github.event.inputs.debug }}" = "true" ]; then
+            python main.py --debug --dry-run
+          else
+            python main.py
+          fi
+
+      - name: Upload debug artifacts
+        if: ${{ github.event.inputs.debug == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fanatics-debug
+          path: |
+            debug_screenshot.png
+            debug_page.html
+            debug_api_responses.json
+          if-no-files-found: warn
 
       # Commit state.json only when it actually changed.
       # [skip ci] in the message prevents this commit from re-triggering the workflow.
       - name: Commit updated state
+        if: ${{ github.event.inputs.debug != 'true' }}
         run: |
           git config user.name  "jersey-bot"
           git config user.email "jersey-bot@noreply.github.com"

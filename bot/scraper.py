@@ -7,20 +7,44 @@ Extraction strategy (tried in order):
   2. Extract from __NEXT_DATA__ embedded in the HTML.
   3. DOM scraping with multiple CSS-selector fallbacks.
 
+Anti-detection measures applied:
+  - playwright-stealth patches navigator.webdriver and ~20 other fingerprint signals
+  - Realistic Chrome User-Agent, viewport, Accept-Language headers
+  - Random human-like delay before page interaction
+  - Scroll-to-bottom to trigger lazy-loaded product cards and mimic browsing
+  - Cookie/privacy banner auto-dismissal so content isn't blocked
+
 If the site structure changes and the scraper stops returning results, run
 with --debug to save debug_screenshot.png and debug_page.html for inspection.
 """
 
 import json
 import logging
+import random
 import re
+import time
 from typing import List, Optional
 
 from playwright.sync_api import sync_playwright, Page, Response
+from playwright_stealth import stealth_sync
 
 from .models import Jersey
 
 logger = logging.getLogger(__name__)
+
+# Selectors for cookie / privacy consent banners (tried in order)
+_COOKIE_BANNER_SELECTORS = [
+    'button[id*="accept"]',
+    'button[class*="accept"]',
+    'button[aria-label*="Accept"]',
+    'button[data-testid*="accept"]',
+    '#onetrust-accept-btn-handler',
+    '.cc-accept',
+    'button:has-text("Accept All")',
+    'button:has-text("Accept Cookies")',
+    'button:has-text("I Accept")',
+    'button:has-text("Accept")',
+]
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
@@ -29,7 +53,13 @@ def scrape_jerseys(config: dict, debug: bool = False) -> List[Jersey]:
     jerseys: List[Jersey] = []
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+            ],
+        )
         context = browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -37,8 +67,17 @@ def scrape_jerseys(config: dict, debug: bool = False) -> List[Jersey]:
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
             viewport={"width": 1280, "height": 900},
+            locale="en-US",
+            timezone_id="America/New_York",
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            },
         )
         page = context.new_page()
+
+        # Apply stealth patches before any navigation
+        stealth_sync(page)
 
         # Collect all JSON responses while the page loads so we can mine them
         # for product data without relying on any specific API path.
@@ -59,11 +98,19 @@ def scrape_jerseys(config: dict, debug: bool = False) -> List[Jersey]:
         logger.info(f"Loading {url}")
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-            page.wait_for_timeout(6_000)   # let deferred JS finish
         except Exception as exc:
             logger.error(f"Page load error: {exc}")
             browser.close()
             return []
+
+        # Human-like pause before interacting (1.5–3.5 seconds)
+        time.sleep(random.uniform(1.5, 3.5))
+
+        # Dismiss any cookie / privacy consent banner
+        _dismiss_cookie_banner(page)
+
+        # Scroll through the page to trigger lazy-loaded product cards
+        _scroll_to_load(page)
 
         if debug:
             page.screenshot(path="debug_screenshot.png", full_page=True)
@@ -74,6 +121,7 @@ def scrape_jerseys(config: dict, debug: bool = False) -> List[Jersey]:
             logger.info("Debug files written: debug_screenshot.png / debug_page.html / debug_api_responses.json")
 
         # --- Strategy 1: intercepted API responses ---------------------------
+
         for payload in captured_json:
             products = _find_product_list(payload)
             if products:
@@ -94,6 +142,40 @@ def scrape_jerseys(config: dict, debug: bool = False) -> List[Jersey]:
 
     logger.info(f"Total jerseys extracted: {len(jerseys)}")
     return jerseys
+
+
+# ── Page interaction helpers ──────────────────────────────────────────────────
+
+def _dismiss_cookie_banner(page: Page) -> None:
+    """Click the first matching cookie/privacy consent button, if present."""
+    for sel in _COOKIE_BANNER_SELECTORS:
+        try:
+            btn = page.query_selector(sel)
+            if btn and btn.is_visible():
+                btn.click()
+                logger.info(f"Dismissed cookie banner via '{sel}'")
+                time.sleep(random.uniform(0.5, 1.0))
+                return
+        except Exception:
+            continue
+
+
+def _scroll_to_load(page: Page) -> None:
+    """Scroll the page in steps to trigger lazy-loaded product cards."""
+    total_height = page.evaluate("() => document.body.scrollHeight")
+    viewport_height = 900
+    position = 0
+    step = random.randint(300, 500)
+
+    while position < total_height:
+        position = min(position + step, total_height)
+        page.evaluate(f"window.scrollTo(0, {position})")
+        time.sleep(random.uniform(0.15, 0.35))
+
+    # Scroll back to top so the page state is normal
+    page.evaluate("window.scrollTo(0, 0)")
+    time.sleep(random.uniform(0.5, 1.0))
+    logger.info("Scroll-to-load complete")
 
 
 # ── Strategy helpers ──────────────────────────────────────────────────────────
