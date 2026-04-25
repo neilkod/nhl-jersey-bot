@@ -23,9 +23,9 @@ watch_teams:
 #
 # Fanatics tiers for reference:
 #   Authentic  – Adidas on-ice jersey, ~$220-250 retail
-#   Premier    – Reebok/Fanatics mid-tier jersey, ~$130-160 retail
+#   Premier    – Reebok Premier (older) OR Fanatics Premium (current mid-tier), ~$120-170 retail
 #   Practice   – Mesh practice jersey, ~$60-100 retail
-#   Breakaway  – Replica jersey, ~$120 retail  ← currently disabled
+#   Breakaway  – Replica jersey, ~$90-120 retail  ← currently disabled
 jersey_categories:
   authentic:
     enabled: true
@@ -40,6 +40,7 @@ jersey_categories:
     keywords:
       - "Premier"
       - "Reebok Premier"
+      - "Premium"        # Fanatics now calls their mid-tier jersey "Premium" not "Premier"
   practice:
     enabled: true
     keywords:
