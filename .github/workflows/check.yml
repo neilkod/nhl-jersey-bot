@@ -1,0 +1,44 @@
+name: NHL Jersey Check
+
+on:
+  schedule:
+    # Runs every 6 hours at :00. Adjust the hour offsets to shift the window.
+    - cron: '0 */6 * * *'
+  workflow_dispatch:   # allows a manual "Run workflow" button in the GitHub UI
+
+jobs:
+  check-jerseys:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed to commit state.json back to the repo
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright Chromium + system deps
+        run: playwright install chromium --with-deps
+
+      - name: Run jersey bot
+        env:
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python main.py
+
+      # Commit state.json only when it actually changed.
+      # [skip ci] in the message prevents this commit from re-triggering the workflow.
+      - name: Commit updated state
+        run: |
+          git config user.name  "jersey-bot"
+          git config user.email "jersey-bot@noreply.github.com"
+          git add state.json
+          git diff --staged --quiet || git commit -m "chore: update jersey state [skip ci]"
+          git push

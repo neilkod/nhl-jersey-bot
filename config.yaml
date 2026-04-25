@@ -1,0 +1,81 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NHL Jersey Clearance Bot — Configuration
+# All tunable behaviour lives here. No code changes needed for common updates.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Fanatics clearance jerseys listing URL.
+# The bot fetches this page and filters results client-side, so changing the
+# URL (e.g. different sale event) is the only thing needed to shift focus.
+fanatics_url: "https://www.fanatics.com/nhl/jerseys-sale-items/o-3539+d-08662378+os-90+z-9162-596540854"
+
+# ── Teams ────────────────────────────────────────────────────────────────────
+# Add more entries to watch additional teams.
+# notify: false = tracked in state but no email sent (useful for future teams).
+watch_teams:
+  - name: "San Jose Sharks"
+    notify: true
+  - name: "Florida Panthers"
+    notify: false
+
+# ── Jersey categories ────────────────────────────────────────────────────────
+# Each category has a list of keywords matched against product titles (case-
+# insensitive). A jersey matches the FIRST category whose keywords hit.
+#
+# Fanatics tiers for reference:
+#   Authentic  – Adidas on-ice jersey, ~$220-250 retail
+#   Premier    – Reebok/Fanatics mid-tier jersey, ~$130-160 retail
+#   Practice   – Mesh practice jersey, ~$60-100 retail
+#   Breakaway  – Replica jersey, ~$120 retail  ← currently disabled
+jersey_categories:
+  authentic:
+    enabled: true
+    keywords:
+      - "Authentic"
+      - "Adidas Authentic"
+      - "Primegreen"
+      - "Primeblue"
+    min_original_price: 180  # price-based fallback classifier (set conservatively)
+  premier:
+    enabled: true
+    keywords:
+      - "Premier"
+      - "Reebok Premier"
+  practice:
+    enabled: true
+    keywords:
+      - "Practice"
+  breakaway:
+    enabled: false   # flip to true to add Breakaway/Replica alerts
+    keywords:
+      - "Breakaway"
+      - "Replica"
+
+# ── Size filtering ───────────────────────────────────────────────────────────
+# standard  → used for Practice and Breakaway jerseys (S/M/L/XL)
+# numeric   → used for Authentic/Premier jerseys (hockey sizing)
+#             At 6'2" / 180 lbs: 52 = fitted L, 54 = comfortable XL
+#
+# Set either list to [] to skip size filtering for that style.
+target_sizes:
+  standard:
+    - "L"
+    - "XL"
+  numeric:
+    - "52"
+    - "54"
+
+# ── Exclusions ───────────────────────────────────────────────────────────────
+# Products whose titles contain any of these keywords are silently dropped.
+# Add "Womens" here if you want to exclude women's cut jerseys.
+exclude_keywords:
+  - "Youth"
+  - "Kids"
+  - "Toddler"
+  - "Infant"
+  - "Girls"
+  - "Boys"
+  - "Child"
+
+# ── Email ────────────────────────────────────────────────────────────────────
+notify_email: "nkodner@gmail.com"
+from_email: "nkodner@gmail.com"
