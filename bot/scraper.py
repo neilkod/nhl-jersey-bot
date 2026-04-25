@@ -109,46 +109,41 @@ def _from_next_data(soup: BeautifulSoup, config: dict) -> List[Jersey]:
 
 
 def _dom_scrape(soup: BeautifulSoup, config: dict) -> List[Jersey]:
-    def _has(cls, *terms):
-        return cls and any(t in " ".join(cls).lower() for t in terms)
-
-    cards = (
-        soup.find_all(class_=lambda c: _has(c, "product-card", "productcard", "product-container", "item-cell", "productitem")) or
-        soup.find_all("article") or
-        []
-    )
+    # Fanatics-specific selectors confirmed from page inspection.
+    # Card structure:
+    #   div.product-card
+    #     div.product-card-title > a  (name + href)
+    #     span.lowest > span.money-value  (sale price)
+    #     span.strike-through > span.money-value  (original price)
+    # Sizes are not shown on the listing page; size filtering is skipped.
+    cards = soup.find_all("div", class_="product-card")
 
     if not cards:
-        logger.warning("No product cards found. Run with --debug and inspect debug_page.html.")
+        logger.warning("No product-card divs found. Run with --debug and inspect debug_page.html.")
         return []
 
-    logger.info(f"[strategy-2] {len(cards)} candidate cards found in DOM")
+    logger.info(f"[strategy-2] {len(cards)} product cards found")
     jerseys = []
     for card in cards:
         try:
-            name_el = (
-                card.find(class_=lambda c: _has(c, "product-name", "productname")) or
-                card.find(class_=lambda c: _has(c, "title")) or
-                card.find("h2") or card.find("h3")
-            )
-            name = name_el.get_text(strip=True) if name_el else ""
+            title_div = card.find("div", class_="product-card-title")
+            link_el = title_div.find("a") if title_div else None
+            name = link_el.get_text(strip=True) if link_el else ""
             if not name:
                 continue
 
-            link = card.find("a", href=True)
-            href = link["href"] if link else ""
+            href = link_el.get("href", "") if link_el else ""
             url = f"https://www.fanatics.com{href}" if href.startswith("/") else href
 
-            sale_el = card.find(class_=lambda c: _has(c, "sale-price", "final-price", "current-price", "selling-price"))
-            orig_el = card.find(class_=lambda c: _has(c, "original-price", "list-price", "was-price", "regular-price")) or card.find("s")
+            lowest = card.find("span", class_="lowest")
+            sale_val = lowest.find("span", class_="money-value") if lowest else None
+            sale_price = _parse_price(sale_val.get_text() if sale_val else "")
 
-            sale_price = _parse_price(sale_el.get_text() if sale_el else "")
-            orig_price = _parse_price(orig_el.get_text() if orig_el else "")
+            strike = card.find("span", class_="strike-through")
+            orig_val = strike.find("span", class_="money-value") if strike else None
+            orig_price = _parse_price(orig_val.get_text() if orig_val else "")
 
-            size_els = card.find_all(class_=lambda c: _has(c, "size"))
-            sizes = [el.get_text(strip=True) for el in size_els if el.get_text(strip=True)]
-
-            j = _build_jersey(name, sale_price, orig_price, url, sizes, config)
+            j = _build_jersey(name, sale_price, orig_price, url, [], config)
             if j:
                 jerseys.append(j)
         except Exception as exc:
