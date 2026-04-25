@@ -17,7 +17,7 @@ on:
 
 jobs:
   check-jerseys:
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
 
     permissions:
       contents: write   # needed to commit state.json back to the repo
@@ -35,7 +35,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Install Playwright Chromium + system deps
-        run: playwright install chromium --with-deps
+        run: playwright install chromium
 
       - name: Run jersey bot
         env:
