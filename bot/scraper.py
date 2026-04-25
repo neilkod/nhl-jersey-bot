@@ -61,21 +61,32 @@ def scrape_jerseys(config: dict, debug: bool = False) -> List[Jersey]:
 # ── Fetch ─────────────────────────────────────────────────────────────────────
 
 def _fetch(url: str, api_key: str) -> Optional[str]:
-    params = {
-        "api_key": api_key,
-        "url": url,
-        "render": "true",     # full JS rendering — costs 5 credits vs 1
-        "country_code": "us",
-    }
-    try:
-        resp = requests.get(SCRAPERAPI_ENDPOINT, params=params, timeout=120)
-        resp.raise_for_status()
-        logger.info(f"ScraperAPI: HTTP {resp.status_code}, {len(resp.text):,} chars returned")
-        return resp.text
-    except requests.HTTPError as exc:
-        logger.error(f"ScraperAPI HTTP error: {exc}")
-    except requests.RequestException as exc:
-        logger.error(f"ScraperAPI request failed: {exc}")
+    # Try plain fetch first (1 credit). Fanatics uses Next.js SSR so product
+    # data is usually in the initial HTML without needing JS rendering.
+    # Falls back to render=true (5 credits) if the plain response looks empty.
+    for render in (False, True):
+        params = {
+            "api_key": api_key,
+            "url": url,
+            "country_code": "us",
+        }
+        if render:
+            params["render"] = "true"
+            logger.info("Retrying with JS rendering enabled…")
+
+        try:
+            resp = requests.get(SCRAPERAPI_ENDPOINT, params=params, timeout=120)
+            resp.raise_for_status()
+            chars = len(resp.text)
+            logger.info(f"ScraperAPI: HTTP {resp.status_code}, {chars:,} chars (render={render})")
+            if chars > 5_000:   # a real page; Access Denied pages are ~600 chars
+                return resp.text
+            logger.warning(f"Response suspiciously short ({chars} chars), retrying…")
+        except requests.HTTPError as exc:
+            logger.error(f"ScraperAPI HTTP error (render={render}): {exc}")
+        except requests.RequestException as exc:
+            logger.error(f"ScraperAPI request failed (render={render}): {exc}")
+
     return None
 
 
