@@ -76,6 +76,8 @@ exclude_keywords:
   - "Girls"
   - "Boys"
   - "Child"
+  - "Women"
+  - "Preschool"
 
 # ── Email ────────────────────────────────────────────────────────────────────
 notify_email: "nkodner@gmail.com"
