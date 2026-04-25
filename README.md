@@ -68,9 +68,11 @@ Fanatics sells NHL jerseys in several tiers. The bot currently watches:
 | Category | Enabled | Fanatics product keywords | Typical retail price |
 |---|---|---|---|
 | **Authentic** | yes | "Authentic", "Adidas Authentic", "Primegreen", "Primeblue" | ~$220–250 |
-| **Premier** | yes | "Premier", "Reebok Premier" | ~$130–160 |
+| **Premier** | yes | "Premier", "Reebok Premier", "Premium" | ~$120–170 |
 | **Practice** | yes | "Practice" | ~$60–100 |
-| Breakaway | no | "Breakaway", "Replica" | ~$120 |
+| Breakaway | no | "Breakaway", "Replica" | ~$90–120 |
+
+> **Why "Premium" is under Premier:** Fanatics replaced the old Reebok "Premier" jersey with their own "Fanatics Premium" mid-tier jersey. The product titles on the site say "Premium", not "Premier", so both keywords are needed to catch the full range.
 
 A jersey title is matched against each category's `keywords` list (case-insensitive). If no keyword matches, a price-based fallback classifies anything over `min_original_price` (set in `config.yaml`) as Authentic.
 
@@ -174,6 +176,25 @@ jersey_categories:
     keywords:
       - "Fanatics Premium"
 ```
+
+### Adding or removing exclusions
+
+Products whose titles contain any of these keywords are silently dropped. Current exclusions:
+
+```yaml
+exclude_keywords:
+  - "Youth"       # youth/kids jerseys
+  - "Kids"
+  - "Toddler"
+  - "Infant"
+  - "Preschool"
+  - "Girls"
+  - "Boys"
+  - "Child"
+  - "Women"       # women's cut jerseys (different sizing)
+```
+
+To stop excluding a category, remove the keyword. To add one (e.g. "Womens" variants), append it to the list.
 
 ### Enabling Breakaway alerts
 
