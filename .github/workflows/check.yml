@@ -2,12 +2,11 @@ name: NHL Jersey Check
 
 on:
   schedule:
-    # Runs every 6 hours at :00. Adjust the hour offsets to shift the window.
     - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
       debug:
-        description: 'Save debug files (screenshot + HTML + API responses) as artifacts'
+        description: 'Save debug_page.html as a downloadable artifact (dry-run, no email)'
         required: false
         default: 'false'
         type: choice
@@ -17,10 +16,10 @@ on:
 
 jobs:
   check-jerseys:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     permissions:
-      contents: write   # needed to commit state.json back to the repo
+      contents: write
 
     steps:
       - name: Checkout repo
@@ -31,14 +30,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Install Playwright Chromium + system deps
-        run: playwright install chromium
 
       - name: Run jersey bot
         env:
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
           if [ "${{ github.event.inputs.debug }}" = "true" ]; then
@@ -47,19 +44,14 @@ jobs:
             python main.py
           fi
 
-      - name: Upload debug artifacts
+      - name: Upload debug page
         if: ${{ github.event.inputs.debug == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: fanatics-debug
-          path: |
-            debug_screenshot.png
-            debug_page.html
-            debug_api_responses.json
+          path: debug_page.html
           if-no-files-found: warn
 
-      # Commit state.json only when it actually changed.
-      # [skip ci] in the message prevents this commit from re-triggering the workflow.
       - name: Commit updated state
         if: ${{ github.event.inputs.debug != 'true' }}
         run: |

@@ -1,288 +1,162 @@
 """
-Fanatics product scraper.
+Fanatics product scraper — uses ScraperAPI to bypass Akamai bot protection.
+
+ScraperAPI routes requests through residential IPs and renders JavaScript,
+returning the same HTML a real browser would see. No Playwright needed.
 
 Extraction strategy (tried in order):
-  1. Intercept the JSON API response Fanatics issues during page load —
-     more reliable than DOM parsing and survives layout redesigns.
-  2. Extract from __NEXT_DATA__ embedded in the HTML.
-  3. DOM scraping with multiple CSS-selector fallbacks.
+  1. __NEXT_DATA__ JSON embedded in page HTML (Next.js SSR)
+  2. DOM scraping with BeautifulSoup
 
-Anti-detection measures applied:
-  - playwright-stealth patches navigator.webdriver and ~20 other fingerprint signals
-  - Realistic Chrome User-Agent, viewport, Accept-Language headers
-  - Random human-like delay before page interaction
-  - Scroll-to-bottom to trigger lazy-loaded product cards and mimic browsing
-  - Cookie/privacy banner auto-dismissal so content isn't blocked
-
-If the site structure changes and the scraper stops returning results, run
-with --debug to save debug_screenshot.png and debug_page.html for inspection.
+Run with --debug to write debug_page.html for selector inspection.
 """
 
 import json
 import logging
-import random
+import os
 import re
-import time
 from typing import List, Optional
 
-from playwright.sync_api import sync_playwright, Page, Response
-from playwright_stealth import stealth_sync
+import requests
+from bs4 import BeautifulSoup
 
 from .models import Jersey
 
 logger = logging.getLogger(__name__)
 
-# Selectors for cookie / privacy consent banners (tried in order)
-_COOKIE_BANNER_SELECTORS = [
-    'button[id*="accept"]',
-    'button[class*="accept"]',
-    'button[aria-label*="Accept"]',
-    'button[data-testid*="accept"]',
-    '#onetrust-accept-btn-handler',
-    '.cc-accept',
-    'button:has-text("Accept All")',
-    'button:has-text("Accept Cookies")',
-    'button:has-text("I Accept")',
-    'button:has-text("Accept")',
-]
+SCRAPERAPI_ENDPOINT = "http://api.scraperapi.com"
+
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def scrape_jerseys(config: dict, debug: bool = False) -> List[Jersey]:
+    api_key = os.environ.get("SCRAPERAPI_KEY", "")
+    if not api_key:
+        raise EnvironmentError("SCRAPERAPI_KEY environment variable is not set.")
+
     url = config["fanatics_url"]
-    jerseys: List[Jersey] = []
+    logger.info(f"Fetching {url} via ScraperAPI…")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-            ],
-        )
-        context = browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 900},
-            locale="en-US",
-            timezone_id="America/New_York",
-            extra_http_headers={
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            },
-        )
-        page = context.new_page()
+    html = _fetch(url, api_key)
+    if not html:
+        return []
 
-        # Apply stealth patches before any navigation
-        stealth_sync(page)
+    if debug:
+        with open("debug_page.html", "w", encoding="utf-8") as fh:
+            fh.write(html)
+        logger.info("Debug file written: debug_page.html")
 
-        # Collect all JSON responses while the page loads so we can mine them
-        # for product data without relying on any specific API path.
-        captured_json: list = []
+    soup = BeautifulSoup(html, "lxml")
 
-        def on_response(response: Response) -> None:
-            ct = response.headers.get("content-type", "")
-            if "application/json" not in ct:
-                return
-            try:
-                data = response.json()
-                captured_json.append(data)
-            except Exception:
-                pass
+    jerseys = _from_next_data(soup, config)
 
-        page.on("response", on_response)
-
-        logger.info(f"Loading {url}")
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-        except Exception as exc:
-            logger.error(f"Page load error: {exc}")
-            browser.close()
-            return []
-
-        # Human-like pause before interacting (1.5–3.5 seconds)
-        time.sleep(random.uniform(1.5, 3.5))
-
-        # Dismiss any cookie / privacy consent banner
-        _dismiss_cookie_banner(page)
-
-        # Scroll through the page to trigger lazy-loaded product cards
-        _scroll_to_load(page)
-
-        if debug:
-            page.screenshot(path="debug_screenshot.png", full_page=True)
-            with open("debug_page.html", "w", encoding="utf-8") as fh:
-                fh.write(page.content())
-            with open("debug_api_responses.json", "w", encoding="utf-8") as fh:
-                json.dump(captured_json, fh, indent=2, default=str)
-            logger.info("Debug files written: debug_screenshot.png / debug_page.html / debug_api_responses.json")
-
-        # --- Strategy 1: intercepted API responses ---------------------------
-
-        for payload in captured_json:
-            products = _find_product_list(payload)
-            if products:
-                jerseys = _parse_products(products, config)
-                logger.info(f"[strategy-1] parsed {len(jerseys)} jerseys from API response")
-                break
-
-        # --- Strategy 2: __NEXT_DATA__ in page HTML --------------------------
-        if not jerseys:
-            jerseys = _extract_from_next_data(page, config)
-
-        # --- Strategy 3: DOM scraping ----------------------------------------
-        if not jerseys:
-            logger.info("Falling back to DOM scraping…")
-            jerseys = _dom_scrape(page, config)
-
-        browser.close()
+    if not jerseys:
+        logger.info("Falling back to DOM scraping…")
+        jerseys = _dom_scrape(soup, config)
 
     logger.info(f"Total jerseys extracted: {len(jerseys)}")
     return jerseys
 
 
-# ── Page interaction helpers ──────────────────────────────────────────────────
+# ── Fetch ─────────────────────────────────────────────────────────────────────
 
-def _dismiss_cookie_banner(page: Page) -> None:
-    """Click the first matching cookie/privacy consent button, if present."""
-    for sel in _COOKIE_BANNER_SELECTORS:
-        try:
-            btn = page.query_selector(sel)
-            if btn and btn.is_visible():
-                btn.click()
-                logger.info(f"Dismissed cookie banner via '{sel}'")
-                time.sleep(random.uniform(0.5, 1.0))
-                return
-        except Exception:
-            continue
-
-
-def _scroll_to_load(page: Page) -> None:
-    """Scroll the page in steps to trigger lazy-loaded product cards."""
-    total_height = page.evaluate("() => document.body.scrollHeight")
-    viewport_height = 900
-    position = 0
-    step = random.randint(300, 500)
-
-    while position < total_height:
-        position = min(position + step, total_height)
-        page.evaluate(f"window.scrollTo(0, {position})")
-        time.sleep(random.uniform(0.15, 0.35))
-
-    # Scroll back to top so the page state is normal
-    page.evaluate("window.scrollTo(0, 0)")
-    time.sleep(random.uniform(0.5, 1.0))
-    logger.info("Scroll-to-load complete")
+def _fetch(url: str, api_key: str) -> Optional[str]:
+    params = {
+        "api_key": api_key,
+        "url": url,
+        "render": "true",     # full JS rendering — costs 5 credits vs 1
+        "country_code": "us",
+    }
+    try:
+        resp = requests.get(SCRAPERAPI_ENDPOINT, params=params, timeout=120)
+        resp.raise_for_status()
+        logger.info(f"ScraperAPI: HTTP {resp.status_code}, {len(resp.text):,} chars returned")
+        return resp.text
+    except requests.HTTPError as exc:
+        logger.error(f"ScraperAPI HTTP error: {exc}")
+    except requests.RequestException as exc:
+        logger.error(f"ScraperAPI request failed: {exc}")
+    return None
 
 
-# ── Strategy helpers ──────────────────────────────────────────────────────────
+# ── Extraction strategies ─────────────────────────────────────────────────────
 
-def _extract_from_next_data(page: Page, config: dict) -> List[Jersey]:
-    raw = page.evaluate(
-        "() => { const el = document.getElementById('__NEXT_DATA__'); "
-        "return el ? el.textContent : null; }"
-    )
-    if not raw:
+def _from_next_data(soup: BeautifulSoup, config: dict) -> List[Jersey]:
+    tag = soup.find("script", id="__NEXT_DATA__")
+    if not tag or not tag.string:
         return []
     try:
-        data = json.loads(raw)
+        data = json.loads(tag.string)
         products = _find_product_list(data)
         if products:
             jerseys = _parse_products(products, config)
-            logger.info(f"[strategy-2] parsed {len(jerseys)} jerseys from __NEXT_DATA__")
+            logger.info(f"[strategy-1] {len(jerseys)} jerseys from __NEXT_DATA__")
             return jerseys
     except Exception as exc:
         logger.debug(f"__NEXT_DATA__ parse failed: {exc}")
     return []
 
 
-def _dom_scrape(page: Page, config: dict) -> List[Jersey]:
-    card_selectors = [
-        '[class*="product-container"]',
-        '[class*="ProductCard"]',
-        '[class*="product-card"]',
-        '[data-testid*="product"]',
-        'article[class*="product"]',
-        '[class*="item-cell"]',
-        '[class*="ProductItem"]',
-    ]
+def _dom_scrape(soup: BeautifulSoup, config: dict) -> List[Jersey]:
+    def _has(cls, *terms):
+        return cls and any(t in " ".join(cls).lower() for t in terms)
 
-    cards = []
-    for sel in card_selectors:
-        try:
-            cards = page.query_selector_all(sel)
-            if cards:
-                logger.info(f"[strategy-3] found {len(cards)} cards via '{sel}'")
-                break
-        except Exception:
-            continue
+    cards = (
+        soup.find_all(class_=lambda c: _has(c, "product-card", "productcard", "product-container", "item-cell", "productitem")) or
+        soup.find_all("article") or
+        []
+    )
 
     if not cards:
-        logger.warning(
-            "No product cards found via DOM. "
-            "Re-run with --debug and inspect debug_page.html to locate the right selector."
-        )
+        logger.warning("No product cards found. Run with --debug and inspect debug_page.html.")
         return []
 
-    jerseys: List[Jersey] = []
+    logger.info(f"[strategy-2] {len(cards)} candidate cards found in DOM")
+    jerseys = []
     for card in cards:
         try:
-            name = _first_text(card, [
-                '[class*="product-name"]', '[class*="ProductName"]',
-                '[class*="item-description"]', '[data-testid*="name"]',
-                '[class*="title"]', 'h2', 'h3',
-            ])
+            name_el = (
+                card.find(class_=lambda c: _has(c, "product-name", "productname")) or
+                card.find(class_=lambda c: _has(c, "title")) or
+                card.find("h2") or card.find("h3")
+            )
+            name = name_el.get_text(strip=True) if name_el else ""
             if not name:
                 continue
 
-            sale_text = _first_text(card, [
-                '[class*="sale-price"]', '[class*="SalePrice"]',
-                '[class*="final-price"]', '[class*="current-price"]',
-                '[class*="selling-price"]',
-            ])
-            orig_text = _first_text(card, [
-                '[class*="original-price"]', '[class*="OriginalPrice"]',
-                '[class*="list-price"]', '[class*="was-price"]',
-                '[class*="regular-price"]', 's',
-            ])
-            link_el = card.query_selector("a[href]")
-            href = link_el.get_attribute("href") if link_el else ""
-            url = f"https://www.fanatics.com{href}" if href and href.startswith("/") else (href or "")
+            link = card.find("a", href=True)
+            href = link["href"] if link else ""
+            url = f"https://www.fanatics.com{href}" if href.startswith("/") else href
 
-            size_els = card.query_selector_all('[class*="size"]')
-            sizes = [el.inner_text().strip() for el in size_els if el.inner_text().strip()]
+            sale_el = card.find(class_=lambda c: _has(c, "sale-price", "final-price", "current-price", "selling-price"))
+            orig_el = card.find(class_=lambda c: _has(c, "original-price", "list-price", "was-price", "regular-price")) or card.find("s")
 
-            jersey = _build_jersey(
-                name=name,
-                sale_price=_parse_price(sale_text),
-                orig_price=_parse_price(orig_text),
-                url=url,
-                sizes=sizes,
-                config=config,
-            )
-            if jersey:
-                jerseys.append(jersey)
+            sale_price = _parse_price(sale_el.get_text() if sale_el else "")
+            orig_price = _parse_price(orig_el.get_text() if orig_el else "")
+
+            size_els = card.find_all(class_=lambda c: _has(c, "size"))
+            sizes = [el.get_text(strip=True) for el in size_els if el.get_text(strip=True)]
+
+            j = _build_jersey(name, sale_price, orig_price, url, sizes, config)
+            if j:
+                jerseys.append(j)
         except Exception as exc:
             logger.debug(f"DOM card parse error: {exc}")
 
-    logger.info(f"[strategy-3] DOM scrape yielded {len(jerseys)} matching jerseys")
+    logger.info(f"[strategy-2] {len(jerseys)} matching jerseys from DOM")
     return jerseys
 
 
-# ── JSON product-list finder (recursive) ──────────────────────────────────────
+# ── JSON product-list finder ──────────────────────────────────────────────────
 
 _PRODUCT_KEYS = {"productName", "name", "title", "displayName", "itemName"}
 
+
 def _find_product_list(data, _depth: int = 0) -> list:
-    """Recursively walk a JSON blob to find the first array of product-like dicts."""
     if _depth > 8:
         return []
     if isinstance(data, list) and data:
-        first = data[0]
-        if isinstance(first, dict) and _PRODUCT_KEYS & first.keys():
+        if isinstance(data[0], dict) and _PRODUCT_KEYS & data[0].keys():
             return data
     if isinstance(data, dict):
         for v in data.values():
@@ -295,14 +169,11 @@ def _find_product_list(data, _depth: int = 0) -> list:
 # ── Product parsing ───────────────────────────────────────────────────────────
 
 def _parse_products(products: list, config: dict) -> List[Jersey]:
-    out: List[Jersey] = []
+    out = []
     for p in products:
         try:
-            name = (
-                p.get("productName") or p.get("name") or
-                p.get("title") or p.get("displayName") or
-                p.get("itemName") or ""
-            )
+            name = (p.get("productName") or p.get("name") or
+                    p.get("title") or p.get("displayName") or p.get("itemName") or "")
             if not name:
                 continue
             sale = _coerce_price(p.get("salePrice") or p.get("price") or p.get("finalPrice"))
@@ -311,8 +182,7 @@ def _parse_products(products: list, config: dict) -> List[Jersey]:
             if url and not url.startswith("http"):
                 url = f"https://www.fanatics.com{url}"
             sizes = _extract_sizes_from_dict(p)
-            j = _build_jersey(name=name, sale_price=sale, orig_price=orig,
-                              url=url, sizes=sizes, config=config)
+            j = _build_jersey(name, sale, orig, url, sizes, config)
             if j:
                 out.append(j)
         except Exception as exc:
@@ -320,23 +190,15 @@ def _parse_products(products: list, config: dict) -> List[Jersey]:
     return out
 
 
-def _build_jersey(
-    name: str,
-    sale_price: Optional[float],
-    orig_price: Optional[float],
-    url: str,
-    sizes: list,
-    config: dict,
-) -> Optional[Jersey]:
+def _build_jersey(name, sale_price, orig_price, url, sizes, config) -> Optional[Jersey]:
     if is_excluded(name, config):
         return None
     jersey_type = classify_jersey_type(name, orig_price or sale_price, config)
     if not jersey_type:
         return None
-    team = _detect_team(name, config)
     return Jersey(
         name=name,
-        team=team,
+        team=_detect_team(name, config),
         jersey_type=jersey_type,
         sale_price=sale_price or 0.0,
         original_price=orig_price,
@@ -345,10 +207,9 @@ def _build_jersey(
     )
 
 
-# ── Classification helpers ────────────────────────────────────────────────────
+# ── Classification ────────────────────────────────────────────────────────────
 
 def classify_jersey_type(name: str, price: Optional[float], config: dict) -> Optional[str]:
-    """Return the matched category name (title-cased) or None."""
     name_lower = name.lower()
     for cat_name, cat_cfg in config.get("jersey_categories", {}).items():
         if not cat_cfg.get("enabled", True):
@@ -356,29 +217,25 @@ def classify_jersey_type(name: str, price: Optional[float], config: dict) -> Opt
         for kw in cat_cfg.get("keywords", []):
             if kw.lower() in name_lower:
                 return cat_name.capitalize()
-    # Price-based fallback for Authentic when keyword is absent
     authentic_min = (config.get("jersey_categories", {})
-                         .get("authentic", {})
-                         .get("min_original_price", 180))
+                         .get("authentic", {}).get("min_original_price", 180))
     if price and price >= authentic_min:
         return "Authentic"
     return None
 
 
 def is_excluded(name: str, config: dict) -> bool:
-    name_lower = name.lower()
-    return any(kw.lower() in name_lower for kw in config.get("exclude_keywords", []))
+    return any(kw.lower() in name.lower() for kw in config.get("exclude_keywords", []))
 
 
 def _detect_team(name: str, config: dict) -> str:
-    name_lower = name.lower()
-    for team_cfg in config.get("watch_teams", []):
-        if team_cfg["name"].lower() in name_lower:
-            return team_cfg["name"]
+    for t in config.get("watch_teams", []):
+        if t["name"].lower() in name.lower():
+            return t["name"]
     return "Unknown"
 
 
-# ── Utility ───────────────────────────────────────────────────────────────────
+# ── Utilities ─────────────────────────────────────────────────────────────────
 
 def _extract_sizes_from_dict(p: dict) -> list:
     sizes = []
@@ -407,19 +264,5 @@ def _coerce_price(value) -> Optional[float]:
 def _parse_price(text: Optional[str]) -> Optional[float]:
     if not text:
         return None
-    cleaned = text.replace(",", "").replace("$", "")
-    m = re.search(r"\d+\.?\d*", cleaned)
+    m = re.search(r"\d+\.?\d*", text.replace(",", "").replace("$", ""))
     return float(m.group()) if m else None
-
-
-def _first_text(element, selectors: list) -> str:
-    for sel in selectors:
-        try:
-            el = element.query_selector(sel)
-            if el:
-                t = el.inner_text().strip()
-                if t:
-                    return t
-        except Exception:
-            continue
-    return ""
