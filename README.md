@@ -4,13 +4,13 @@
 > because by the time the Reddit thread surfaced the deal, only youth sizes were left.
 > Never again.
 
-Monitors the [Fanatics NHL clearance page](https://www.fanatics.com/nhl/jerseys-sale-items/o-3539+d-08662378+os-90+z-9162-596540854) every hour and sends a Gmail notification the moment clearance jerseys appear for a watched team in a target category. No more checking Reddit. No more showing up late.
+Monitors the [Fanatics NHL clearance page](https://www.fanatics.com/nhl/jerseys-sale-items/o-3539+d-08662378+os-90+z-9162-596540854) every 3 hours and sends a Gmail notification the moment clearance jerseys appear for a watched team in a target category. No more checking Reddit. No more showing up late.
 
 ---
 
 ## How it works
 
-1. **GitHub Actions** runs `main.py` on a cron schedule (every hour by default).
+1. **GitHub Actions** runs `main.py` on a cron schedule (every 3 hours by default).
 2. **ScraperAPI** fetches the Fanatics clearance listing page through a residential IP, bypassing Fanatics' Akamai bot protection.
 3. **BeautifulSoup** parses the HTML and extracts product cards using Fanatics' confirmed CSS selectors.
 4. Products are classified by team and jersey type against rules in `config.yaml`.
@@ -209,7 +209,8 @@ jersey_categories:
 Edit the cron expression in `.github/workflows/check.yml`:
 
 ```yaml
-- cron: '0 * * * *'          # every hour (default)
+- cron: '0 */3 * * *'        # every 3 hours (default)
+- cron: '0 * * * *'          # every hour
 - cron: '0 */6 * * *'        # every 6 hours
 - cron: '0 */4 * * *'        # every 4 hours
 - cron: '0 8,14,20 * * *'    # 8 am, 2 pm, 8 pm UTC
