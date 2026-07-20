@@ -272,3 +272,7 @@ nhl-jersey-bot/
 | Notification not firing | Jerseys were already seen on a previous run | Check `state.json`; delete the relevant `NOTIFIED` entry and commit to force a fresh check |
 | Push rejected after a run | Bot committed `state.json` while you were working locally | Run `git pull --rebase` then push |
 | GitHub Actions not triggering on schedule | Repo marked inactive | Visit the Actions tab to re-enable; GitHub pauses cron jobs on repos with no activity for 60 days |
+
+---
+
+_Last keep-alive commit: 2026-07-20 — periodic no-op push to keep scheduled Actions runs from being paused for inactivity._
