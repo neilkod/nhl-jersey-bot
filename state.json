@@ -3,6 +3,7 @@
     "status": "NOT_SEEN"
   },
   "San Jose Sharks|Authentic": {
-    "status": "NOT_SEEN"
+    "status": "NOTIFIED",
+    "last_notified": "2026-11-06T18:47:58.952135+00:00"
   }
 }
