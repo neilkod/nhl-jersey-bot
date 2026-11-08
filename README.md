@@ -100,12 +100,14 @@ Go directly to **https://myaccount.google.com/apppasswords** (2-Step Verificatio
 
 ### 4. Add secrets to GitHub
 
-Go to your repo → **Settings → Secrets and variables → Actions** and add two repository secrets:
+Go to your repo → **Settings → Secrets and variables → Actions** and add these repository secrets:
 
 | Secret name | Value |
 |---|---|
 | `SCRAPERAPI_KEY` | Your ScraperAPI API key |
 | `GMAIL_APP_PASSWORD` | The 16-character Gmail app password |
+| `NOTIFY_EMAIL` | The Gmail address that sends and receives alerts |
+| `NOTIFY_EXTRA_EMAILS` | Optional. Additional recipients, comma-separated (e.g. `a@x.com,b@y.com`). They are BCC'd, so they stay hidden from each other and from the logs. |
 
 GitHub Secrets are encrypted at rest, never shown in workflow logs, and not exposed to forks.
 
