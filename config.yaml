@@ -27,6 +27,18 @@ watch_teams:
 #   Practice   – Mesh practice jersey, ~$60-100 retail
 #   Breakaway  – Replica jersey, ~$90-120 retail  ← currently disabled
 jersey_categories:
+  # Unique/collector jerseys from heritage brands (e.g. the Mitchell & Ness
+  # Marleau). Listed first so these get their own "Specialty" alert.
+  specialty:
+    enabled: true
+    keywords:
+      - "Mitchell & Ness"
+      - "Mitchell and Ness"
+      - "CCM"
+      - "Vintage"
+      - "Throwback"
+      - "Blue Line"
+      - "Heritage"
   authentic:
     enabled: true
     keywords:
@@ -42,7 +54,7 @@ jersey_categories:
       - "Reebok Premier"
       - "Premium"        # Fanatics now calls their mid-tier jersey "Premium" not "Premier"
   practice:
-    enabled: true
+    enabled: false   # lower tier; flip to true to get Practice alerts again
     keywords:
       - "Practice"
   breakaway:
@@ -50,6 +62,15 @@ jersey_categories:
     keywords:
       - "Breakaway"
       - "Replica"
+
+# ── Lower-tier veto ──────────────────────────────────────────────────────────
+# Any title containing one of these is dropped BEFORE categorisation, so it
+# can never be alerted under another tier or via the Authentic price fallback.
+# (Disabled categories above are vetoed the same way.)
+lower_tier_keywords:
+  - "Breakaway"
+  - "Replica"
+  - "T-Shirt"
 
 # ── Size filtering ───────────────────────────────────────────────────────────
 # standard  → used for Practice and Breakaway jerseys (S/M/L/XL)

@@ -217,14 +217,24 @@ def _build_jersey(name, sale_price, orig_price, url, sizes, config) -> Optional[
 
 def classify_jersey_type(name: str, price: Optional[float], config: dict) -> Optional[str]:
     name_lower = name.lower()
-    for cat_name, cat_cfg in config.get("jersey_categories", {}).items():
-        if not cat_cfg.get("enabled", True):
-            continue
-        for kw in cat_cfg.get("keywords", []):
-            if kw.lower() in name_lower:
-                return cat_name.capitalize()
-    authentic_min = (config.get("jersey_categories", {})
-                         .get("authentic", {}).get("min_original_price", 180))
+    cats = config.get("jersey_categories", {})
+
+    def hits(keywords) -> bool:
+        return any(kw.lower() in name_lower for kw in keywords)
+
+    # Veto pass: lower-tier jerseys (Breakaway/Replica, plus any disabled
+    # category) are dropped outright. This runs first so they can't sneak in
+    # via a shared keyword (e.g. "Premium") or the price fallback below.
+    if hits(config.get("lower_tier_keywords", [])):
+        return None
+    if any(hits(c.get("keywords", [])) for c in cats.values() if not c.get("enabled", True)):
+        return None
+
+    for cat_name, cat_cfg in cats.items():
+        if cat_cfg.get("enabled", True) and hits(cat_cfg.get("keywords", [])):
+            return cat_name.capitalize()
+
+    authentic_min = cats.get("authentic", {}).get("min_original_price", 180)
     if price and price >= authentic_min:
         return "Authentic"
     return None
