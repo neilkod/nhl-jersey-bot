@@ -3,7 +3,7 @@
 # All tunable behaviour lives here. No code changes needed for common updates.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Fanatics clearance jerseys listing URL.
+# Fanatics sale jerseys listing URL.
 # The bot fetches this page and filters results client-side, so changing the
 # URL (e.g. different sale event) is the only thing needed to shift focus.
 fanatics_url: "https://www.fanatics.com/nhl/jerseys-sale-items/o-3539+d-08662378+os-90+z-9162-596540854"

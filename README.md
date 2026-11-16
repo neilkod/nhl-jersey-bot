@@ -4,14 +4,14 @@
 > because by the time the Reddit thread surfaced the deal, only youth sizes were left.
 > Never again.
 
-Monitors the [Fanatics NHL clearance page](https://www.fanatics.com/nhl/jerseys-sale-items/o-3539+d-08662378+os-90+z-9162-596540854) every 6 hours and sends a Gmail notification the moment clearance jerseys appear for a watched team in a target category. No more checking Reddit. No more showing up late.
+Monitors the [Fanatics NHL sale page](https://www.fanatics.com/nhl/jerseys-sale-items/o-3539+d-08662378+os-90+z-9162-596540854) every 6 hours and sends a Gmail notification the moment sale or clearance jerseys appear for a watched team in a target category. No more checking Reddit. No more showing up late.
 
 ---
 
 ## How it works
 
 1. **GitHub Actions** runs `main.py` on a cron schedule (every 6 hours by default).
-2. **ScraperAPI** fetches the Fanatics clearance listing page through a residential IP, bypassing Fanatics' Akamai bot protection.
+2. **ScraperAPI** fetches the Fanatics sale listing page through a residential IP, bypassing Fanatics' Akamai bot protection.
 3. **BeautifulSoup** parses the HTML and extracts product cards using Fanatics' confirmed CSS selectors.
 4. Products are classified by team and jersey type against rules in `config.yaml`.
 5. A **state machine** per `(team, jersey_type)` pair decides whether to send an email:
@@ -48,7 +48,7 @@ One email per availability window per category. No spam, no re-alerts while the 
 
 ## Scraping approach
 
-ScraperAPI fetches the Fanatics clearance URL and returns the server-rendered HTML. BeautifulSoup then parses it using these confirmed Fanatics CSS selectors:
+ScraperAPI fetches the Fanatics sale URL and returns the server-rendered HTML. BeautifulSoup then parses it using these confirmed Fanatics CSS selectors:
 
 | Data | Selector |
 |---|---|
@@ -236,9 +236,9 @@ GitHub Actions free-tier cron jobs may be delayed a few minutes during high-traf
 
 ## Extending to other product types (T-shirts, hoodies, etc.)
 
-The architecture monitors any Fanatics clearance URL. To add T-shirt or hoodie tracking:
+The architecture monitors any Fanatics sale or clearance URL. To add T-shirt or hoodie tracking:
 
-1. Find the Fanatics clearance URL for that category.
+1. Find the Fanatics sale or clearance URL for that category.
 2. Add it to `config.yaml` or create a separate config file.
 3. Add category keywords under `jersey_categories`.
 4. If using a separate config, add a step in `check.yml`:
