@@ -33,7 +33,7 @@ def send_notification(
     extra = _split_addresses(os.environ.get("NOTIFY_EXTRA_EMAILS", ""))
     recipients = _dedupe([to_email, *extra])
 
-    subject = f"[Jersey Bot] {team} {jersey_type} jerseys on clearance at Fanatics"
+    subject = f"[Jersey Bot] {team} {jersey_type} jerseys on clearance/sale at Fanatics"
 
     body = _build_body(team, jersey_type, jerseys)
 
@@ -67,7 +67,7 @@ def _dedupe(addresses: List[str]) -> List[str]:
 
 def _build_body(team: str, jersey_type: str, jerseys: List[Jersey]) -> str:
     lines = [
-        f"{team} {jersey_type} jerseys are on clearance at Fanatics!",
+        f"{team} {jersey_type} jerseys are on clearance/sale at Fanatics!",
         f"Found {len(jerseys)} matching jersey(s) in your target sizes.",
         "",
     ]
