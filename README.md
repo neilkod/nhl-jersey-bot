@@ -67,16 +67,25 @@ Fanatics sells NHL jerseys in several tiers. The bot currently watches:
 
 | Category | Enabled | Fanatics product keywords | Typical retail price |
 |---|---|---|---|
+| **Specialty** | yes | "Mitchell & Ness", "Mitchell and Ness", "CCM", "Vintage", "Throwback", "Blue Line", "Heritage" | varies |
 | **Authentic** | yes | "Authentic", "Adidas Authentic", "Primegreen", "Primeblue" | ~$220–250 |
 | **Premier** | yes | "Premier", "Reebok Premier", "Premium" | ~$120–170 |
-| **Practice** | yes | "Practice" | ~$60–100 |
+| Practice | no | "Practice" | ~$60–100 |
 | Breakaway | no | "Breakaway", "Replica" | ~$90–120 |
+
+> **Specialty** covers unique/collector jerseys from heritage brands (e.g. a Mitchell & Ness Patrick Marleau Blue Line jersey). It gets its own alert, separate from Authentic and Premier.
 
 > **Why "Premium" is under Premier:** Fanatics replaced the old Reebok "Premier" jersey with their own "Fanatics Premium" mid-tier jersey. The product titles on the site say "Premium", not "Premier", so both keywords are needed to catch the full range.
 
-A jersey title is matched against each category's `keywords` list (case-insensitive). If no keyword matches, a price-based fallback classifies anything over `min_original_price` (set in `config.yaml`) as Authentic.
+Classification runs in this order (all matching is case-insensitive):
 
-To enable Breakaway alerts, set `breakaway.enabled: true` in `config.yaml`.
+1. **Lower-tier veto.** If the title contains any `lower_tier_keywords` entry ("Breakaway", "Replica", "T-Shirt") or any keyword of a **disabled** category, the jersey is dropped. This runs first so a lower-tier jersey can't sneak in through a shared keyword (e.g. "Premium Breakaway") or the price fallback.
+2. **Category keywords.** The first enabled category (in `config.yaml` order) whose `keywords` match wins.
+3. **Price fallback.** If nothing matched, anything with an original price over `min_original_price` is classified as Authentic.
+
+To enable Breakaway or Practice alerts, set that category's `enabled: true` **and** remove "Breakaway"/"Replica" from `lower_tier_keywords` for Breakaway.
+
+When an alert fires, the workflow log lists every jersey name and price that triggered it.
 
 ---
 
@@ -204,6 +213,9 @@ To stop excluding a category, remove the keyword. To add one (e.g. "Womens" vari
 jersey_categories:
   breakaway:
     enabled: true   # was false
+
+lower_tier_keywords:   # remove "Breakaway" and "Replica" from here too
+  - "T-Shirt"
 ```
 
 ### Changing the polling interval
