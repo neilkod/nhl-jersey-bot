@@ -97,6 +97,8 @@ def main() -> None:
     for (team, jersey_type), jerseys in matched.items():
         if should_notify(state, team, jersey_type):
             logger.info(f"  NOTIFY  {team} — {jersey_type} ({len(jerseys)} jersey(s))")
+            for j in jerseys:
+                logger.info(f"            · {j.name} — {j.format_price()}")
             if not args.dry_run:
                 send_notification(team, jersey_type, jerseys, config)
                 mark_notified(state, team, jersey_type)
