@@ -1,10 +1,8 @@
 {
   "San Jose Sharks|Premier": {
-    "status": "NOTIFIED",
-    "last_notified": "2026-11-16T21:32:49.296981+00:00"
+    "status": "NOT_SEEN"
   },
   "San Jose Sharks|Authentic": {
-    "status": "NOTIFIED",
-    "last_notified": "2026-11-16T04:26:12.413489+00:00"
+    "status": "NOT_SEEN"
   }
 }
